@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Header } from "@/components/trading/Header";
 import { ApiKeyDialog } from "@/components/trading/ApiKeyDialog";
 import { TradeConfigCard } from "@/components/trading/TradeConfigCard";
 import { ActiveTradesCard } from "@/components/trading/ActiveTradesCard";
 import { useToast } from "@/hooks/use-toast";
+import { CoinbaseCredentials, getCryptoPrice, placeOrder } from "@/lib/coinbase-api";
 
 interface Trade {
   id: string;
@@ -28,54 +29,95 @@ interface TradeConfig {
 const Index = () => {
   const [isApiDialogOpen, setIsApiDialogOpen] = useState(false);
   const [isApiConnected, setIsApiConnected] = useState(false);
-  const [apiCredentials, setApiCredentials] = useState<{
-    apiKey: string;
-    secretKey: string;
-    passphrase: string;
-  } | null>(null);
+  const [apiCredentials, setApiCredentials] = useState<CoinbaseCredentials | null>(null);
   const [activeTrades, setActiveTrades] = useState<Trade[]>([]);
+  const [realTimePrices, setRealTimePrices] = useState<Record<string, number>>({});
   const { toast } = useToast();
 
-  const handleApiKeySet = (apiKey: string, secretKey: string, passphrase: string) => {
-    setApiCredentials({ apiKey, secretKey, passphrase });
+  const handleApiKeySet = (keyName: string, privateKey: string) => {
+    setApiCredentials({ keyName, privateKey });
     setIsApiConnected(true);
   };
 
-  const handleCreateTrade = (config: TradeConfig) => {
-    // Simulate creating a trade with mock current price
-    const mockCurrentPrice = Math.random() * 100000 + 20000; // Mock price between 20k-120k
-    const newTrade: Trade = {
-      id: Date.now().toString(),
-      crypto: config.crypto,
-      amount: parseFloat(config.amount),
-      entryPrice: mockCurrentPrice,
-      currentPrice: mockCurrentPrice * (1 + (Math.random() - 0.5) * 0.02), // +/- 1% variance
-      takeProfitPercent: parseFloat(config.takeProfitPercent),
-      trailingEnabled: config.enableTrailing,
-      status: 'active',
-      timestamp: new Date(),
+  // Fetch real-time prices for active trades
+  useEffect(() => {
+    if (!apiCredentials || activeTrades.length === 0) return;
+
+    const fetchPrices = async () => {
+      const uniqueProducts = [...new Set(activeTrades.map(trade => trade.crypto))];
+      
+      for (const productId of uniqueProducts) {
+        try {
+          const { price } = await getCryptoPrice(apiCredentials, productId);
+          setRealTimePrices(prev => ({ ...prev, [productId]: price }));
+          
+          // Update trade current prices
+          setActiveTrades(prev => prev.map(trade => 
+            trade.crypto === productId 
+              ? { ...trade, currentPrice: price }
+              : trade
+          ));
+        } catch (error) {
+          console.error(`Failed to fetch price for ${productId}:`, error);
+        }
+      }
     };
 
-    setActiveTrades(prev => [...prev, newTrade]);
-    toast({
-      title: "Trade Created",
-      description: `Successfully created ${config.crypto.replace('-USD', '')} trade for $${config.amount}`,
-    });
+    // Fetch immediately and then every 30 seconds
+    fetchPrices();
+    const interval = setInterval(fetchPrices, 30000);
 
-    // Simulate price updates for demo
-    const interval = setInterval(() => {
-      setActiveTrades(prev => prev.map(trade => 
-        trade.id === newTrade.id 
-          ? {
-              ...trade,
-              currentPrice: trade.entryPrice * (1 + (Math.random() - 0.4) * 0.1) // Simulate price movement
-            }
-          : trade
-      ));
-    }, 3000);
+    return () => clearInterval(interval);
+  }, [apiCredentials, activeTrades.length]);
 
-    // Clean up after 30 seconds for demo
-    setTimeout(() => clearInterval(interval), 30000);
+  const handleCreateTrade = async (config: TradeConfig) => {
+    if (!apiCredentials) {
+      toast({
+        title: "API Not Connected",
+        description: "Please configure your API keys first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Get current market price
+      const { price: currentPrice } = await getCryptoPrice(apiCredentials, config.crypto);
+      
+      // Create the trade order
+      const orderResult = await placeOrder(apiCredentials, {
+        productId: config.crypto,
+        side: 'BUY',
+        orderType: 'MARKET',
+        amount: config.amount
+      });
+
+      const newTrade: Trade = {
+        id: orderResult.order_id || Date.now().toString(),
+        crypto: config.crypto,
+        amount: parseFloat(config.amount),
+        entryPrice: currentPrice,
+        currentPrice: currentPrice,
+        takeProfitPercent: parseFloat(config.takeProfitPercent),
+        trailingEnabled: config.enableTrailing,
+        status: 'active',
+        timestamp: new Date(),
+      };
+
+      setActiveTrades(prev => [...prev, newTrade]);
+      toast({
+        title: "Trade Created Successfully",
+        description: `Bought $${config.amount} of ${config.crypto.replace('-USD', '')} at $${currentPrice.toFixed(2)}`,
+      });
+
+    } catch (error) {
+      console.error('Failed to create trade:', error);
+      toast({
+        title: "Trade Creation Failed",
+        description: error instanceof Error ? error.message : "Failed to create trade order",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleCancelTrade = (tradeId: string) => {

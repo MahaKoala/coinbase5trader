@@ -10,26 +10,25 @@ import { useToast } from "@/hooks/use-toast";
 interface ApiKeyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onApiKeySet: (apiKey: string, secretKey: string, passphrase: string) => void;
+  onApiKeySet: (keyName: string, privateKey: string) => void;
 }
 
 export const ApiKeyDialog = ({ open, onOpenChange, onApiKeySet }: ApiKeyDialogProps) => {
-  const [apiKey, setApiKey] = useState("");
-  const [secretKey, setSecretKey] = useState("");
-  const [passphrase, setPassphrase] = useState("");
+  const [keyName, setKeyName] = useState("");
+  const [privateKey, setPrivateKey] = useState("");
   const { toast } = useToast();
 
   const handleSave = () => {
-    if (!apiKey || !secretKey || !passphrase) {
+    if (!keyName || !privateKey) {
       toast({
         title: "Missing Information",
-        description: "Please fill in all API key fields.",
+        description: "Please fill in both API Key Name and Private Key fields.",
         variant: "destructive",
       });
       return;
     }
 
-    onApiKeySet(apiKey, secretKey, passphrase);
+    onApiKeySet(keyName, privateKey);
     onOpenChange(false);
     toast({
       title: "API Keys Configured",
@@ -51,41 +50,33 @@ export const ApiKeyDialog = ({ open, onOpenChange, onApiKeySet }: ApiKeyDialogPr
           <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
             <Shield className="h-4 w-4 text-primary" />
             <p className="text-sm text-muted-foreground">
-              Your API keys are stored securely and only used for trading operations.
+              Uses JWT ECDSA authentication. Your keys are stored securely and only used for trading operations.
             </p>
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="api-key">API Key</Label>
+            <Label htmlFor="key-name">API Key Name</Label>
             <Input
-              id="api-key"
+              id="key-name"
               type="text"
-              placeholder="Enter your Coinbase API key"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="organizations/your-key-name/apiKeys/key-id"
+              value={keyName}
+              onChange={(e) => setKeyName(e.target.value)}
             />
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="secret-key">Secret Key</Label>
+            <Label htmlFor="private-key">Private Key (PKCS#8 format)</Label>
             <Textarea
-              id="secret-key"
-              placeholder="Enter your Coinbase secret key"
-              value={secretKey}
-              onChange={(e) => setSecretKey(e.target.value)}
-              className="min-h-[80px]"
+              id="private-key"
+              placeholder="-----BEGIN PRIVATE KEY-----&#10;MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg...&#10;...&#10;-----END PRIVATE KEY-----"
+              value={privateKey}
+              onChange={(e) => setPrivateKey(e.target.value)}
+              className="min-h-[120px] font-mono text-xs"
             />
-          </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="passphrase">Passphrase</Label>
-            <Input
-              id="passphrase"
-              type="password"
-              placeholder="Enter your passphrase"
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
-            />
+            <p className="text-xs text-muted-foreground">
+              Copy and paste your PKCS#8 private key including the BEGIN/END lines
+            </p>
           </div>
           
           <div className="flex justify-end gap-2 pt-4">
