@@ -1,6 +1,6 @@
 // JWT Authentication utility for Coinbase Advanced Trade API
 // Uses ES256 (ECDSA with P-256 curve) as required by Coinbase
-import { SignJWT, importPKCS8 } from 'jose';
+import { SignJWT, importPKCS8, importSPKI } from 'jose';
 
 export interface CoinbaseCredentials {
   keyName: string;
@@ -19,8 +19,33 @@ export const generateJWT = async (
   const now = Math.floor(Date.now() / 1000);
   
   try {
-    // Import the private key (expects PKCS#8 format)
-    const cryptoKey = await importPKCS8(privateKey, 'ES256');
+    // Handle different private key formats
+    let cryptoKey: CryptoKey;
+    
+    if (privateKey.includes('BEGIN EC PRIVATE KEY')) {
+      // Convert EC private key to PKCS#8 format for jose library
+      // For EC keys, we need to extract the key material and create a proper PKCS#8 key
+      const keyData = privateKey
+        .replace('-----BEGIN EC PRIVATE KEY-----', '')
+        .replace('-----END EC PRIVATE KEY-----', '')
+        .replace(/\s/g, '');
+      
+      // Import as raw EC key and convert
+      const binaryKey = Uint8Array.from(atob(keyData), c => c.charCodeAt(0));
+      
+      // For ECDSA P-256, create the PKCS#8 wrapper
+      const pkcs8Key = `-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg${keyData.substring(14, 78)}
+oUQDQgAE${keyData.substring(78)}
+-----END PRIVATE KEY-----`;
+      
+      cryptoKey = await importPKCS8(pkcs8Key, 'ES256');
+    } else if (privateKey.includes('BEGIN PRIVATE KEY')) {
+      // Standard PKCS#8 format
+      cryptoKey = await importPKCS8(privateKey, 'ES256');
+    } else {
+      throw new Error('Unsupported private key format. Expected EC PRIVATE KEY or PRIVATE KEY format.');
+    }
     
     // Create and sign the JWT
     const jwt = await new SignJWT({
@@ -40,7 +65,7 @@ export const generateJWT = async (
     return jwt;
   } catch (error) {
     console.error('JWT generation failed:', error);
-    throw new Error('Failed to generate JWT token. Please check that your private key is in PKCS#8 format.');
+    throw new Error('Failed to generate JWT token. Please check that your private key is in the correct EC or PKCS#8 format.');
   }
 };
 

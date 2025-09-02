@@ -105,16 +105,16 @@ export const ApiKeyDialog = ({ open, onOpenChange, onApiKeySet }: ApiKeyDialogPr
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="private-key">Private Key (PKCS#8 format)</Label>
+            <Label htmlFor="private-key">Private Key (EC or PKCS#8 format)</Label>
             <Textarea
               id="private-key"
-              placeholder="-----BEGIN PRIVATE KEY-----&#10;MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg...&#10;...&#10;-----END PRIVATE KEY-----"
+              placeholder="-----BEGIN EC PRIVATE KEY-----&#10;MHcCAQEEIE...&#10;-----END EC PRIVATE KEY-----&#10;&#10;or&#10;&#10;-----BEGIN PRIVATE KEY-----&#10;MIGHAgEAMBM...&#10;-----END PRIVATE KEY-----"
               value={privateKey}
               onChange={(e) => setPrivateKey(e.target.value)}
               className="min-h-[120px] font-mono text-xs"
             />
             <p className="text-xs text-muted-foreground">
-              Copy and paste your PKCS#8 private key including the BEGIN/END lines
+              Copy and paste your private key including the BEGIN/END lines (supports both EC and PKCS#8 formats)
             </p>
           </div>
           
