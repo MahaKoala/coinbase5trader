@@ -76,6 +76,31 @@ export const makeCoinbaseRequest = async (
   }
 };
 
+// Function to test API connection
+export const testApiConnection = async (
+  credentials: CoinbaseCredentials
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    // Use a simple authenticated endpoint to test connection
+    await makeCoinbaseRequest(
+      credentials,
+      'GET',
+      '/api/v3/brokerage/accounts'
+    );
+    
+    return {
+      success: true,
+      message: "API connection successful"
+    };
+  } catch (error) {
+    console.error('API connection test failed:', error);
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "API connection failed"
+    };
+  }
+};
+
 // Function to get real-time price for a cryptocurrency
 export const getCryptoPrice = async (
   credentials: CoinbaseCredentials,

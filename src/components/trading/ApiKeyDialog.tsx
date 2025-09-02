@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Key, Shield } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { testApiConnection } from "@/lib/coinbase-api";
 
 interface ApiKeyDialogProps {
   open: boolean;
@@ -16,6 +17,7 @@ interface ApiKeyDialogProps {
 export const ApiKeyDialog = ({ open, onOpenChange, onApiKeySet }: ApiKeyDialogProps) => {
   const [keyName, setKeyName] = useState("");
   const [privateKey, setPrivateKey] = useState("");
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
   const { toast } = useToast();
 
   const handleSave = () => {
@@ -34,6 +36,43 @@ export const ApiKeyDialog = ({ open, onOpenChange, onApiKeySet }: ApiKeyDialogPr
       title: "API Keys Configured",
       description: "Your Coinbase API keys have been securely stored.",
     });
+  };
+
+  const handleTestConnection = async () => {
+    if (!keyName || !privateKey) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in both API Key Name and Private Key fields first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsTestingConnection(true);
+    try {
+      const result = await testApiConnection({ keyName, privateKey });
+      
+      if (result.success) {
+        toast({
+          title: "Connection Successful",
+          description: "Your API credentials are working correctly.",
+        });
+      } else {
+        toast({
+          title: "Connection Failed",
+          description: result.message,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Connection Test Failed",
+        description: "Unable to test connection. Please check your credentials.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsTestingConnection(false);
+    }
   };
 
   return (
@@ -82,6 +121,13 @@ export const ApiKeyDialog = ({ open, onOpenChange, onApiKeySet }: ApiKeyDialogPr
           <div className="flex justify-end gap-2 pt-4">
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
+            </Button>
+            <Button 
+              variant="secondary" 
+              onClick={handleTestConnection}
+              disabled={isTestingConnection || !keyName || !privateKey}
+            >
+              {isTestingConnection ? "Testing..." : "Test Connection"}
             </Button>
             <Button onClick={handleSave} className="bg-gradient-primary">
               Save API Keys
