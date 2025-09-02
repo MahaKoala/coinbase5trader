@@ -90,7 +90,7 @@ export const getCryptoPrice = async (
     
     return {
       price: parseFloat(data.price),
-      volume: parseFloat(data.volume)
+      volume: parseFloat(data.volume_24h || data.volume || '0')
     };
   } catch (error) {
     console.error(`Failed to get price for ${productId}:`, error);
@@ -132,11 +132,19 @@ export const placeOrder = async (
       client_order_id: `order_${Date.now()}`,
       product_id: orderConfig.productId,
       side: orderConfig.side,
-      order_configuration: {
-        [orderConfig.orderType.toLowerCase() + '_market_ioc']: {
-          quote_size: orderConfig.amount
-        }
-      }
+      order_configuration: 
+        orderConfig.orderType === 'MARKET' 
+          ? {
+              market_market_ioc: {
+                quote_size: orderConfig.amount
+              }
+            }
+          : {
+              limit_limit_gtc: {
+                base_size: orderConfig.amount,
+                limit_price: orderConfig.price || '0'
+              }
+            }
     };
 
     const data = await makeCoinbaseRequest(
