@@ -1,6 +1,6 @@
 // JWT Authentication utility for Coinbase Advanced Trade API
 // Uses ES256 (ECDSA with P-256 curve) as required by Coinbase
-import { SignJWT, importPKCS8, importSPKI } from 'jose';
+import { SignJWT, importPKCS8 } from 'jose';
 
 export interface CoinbaseCredentials {
   keyName: string;
@@ -19,33 +19,41 @@ export const generateJWT = async (
   const now = Math.floor(Date.now() / 1000);
   
   try {
+    console.log('Attempting JWT generation with key:', keyName);
+    console.log('Private key format check:', privateKey.substring(0, 50) + '...');
+    
     // Handle different private key formats
     let cryptoKey: CryptoKey;
     
     if (privateKey.includes('BEGIN EC PRIVATE KEY')) {
-      // Convert EC private key to PKCS#8 format for jose library
-      // For EC keys, we need to extract the key material and create a proper PKCS#8 key
-      const keyData = privateKey
-        .replace('-----BEGIN EC PRIVATE KEY-----', '')
-        .replace('-----END EC PRIVATE KEY-----', '')
+      console.log('Detected EC PRIVATE KEY format, converting...');
+      
+      // For EC private keys, we need to convert to PKCS#8 format
+      // This is a more robust conversion
+      const cleanKey = privateKey
+        .replace(/-----BEGIN EC PRIVATE KEY-----/g, '')
+        .replace(/-----END EC PRIVATE KEY-----/g, '')
         .replace(/\s/g, '');
       
-      // Import as raw EC key and convert
-      const binaryKey = Uint8Array.from(atob(keyData), c => c.charCodeAt(0));
+      console.log('Cleaned key length:', cleanKey.length);
       
-      // For ECDSA P-256, create the PKCS#8 wrapper
+      // Create PKCS#8 wrapper for EC P-256 private key
+      const pkcs8Header = 'MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg';
       const pkcs8Key = `-----BEGIN PRIVATE KEY-----
-MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg${keyData.substring(14, 78)}
-oUQDQgAE${keyData.substring(78)}
+${pkcs8Header}${cleanKey.substring(14)}
 -----END PRIVATE KEY-----`;
       
+      console.log('Converted PKCS#8 key preview:', pkcs8Key.substring(0, 100) + '...');
       cryptoKey = await importPKCS8(pkcs8Key, 'ES256');
+      
     } else if (privateKey.includes('BEGIN PRIVATE KEY')) {
-      // Standard PKCS#8 format
+      console.log('Detected PKCS#8 format');
       cryptoKey = await importPKCS8(privateKey, 'ES256');
     } else {
       throw new Error('Unsupported private key format. Expected EC PRIVATE KEY or PRIVATE KEY format.');
     }
+    
+    console.log('Successfully imported private key');
     
     // Create and sign the JWT
     const jwt = await new SignJWT({
@@ -62,10 +70,12 @@ oUQDQgAE${keyData.substring(78)}
       })
       .sign(cryptoKey);
 
+    console.log('JWT generated successfully');
     return jwt;
   } catch (error) {
-    console.error('JWT generation failed:', error);
-    throw new Error('Failed to generate JWT token. Please check that your private key is in the correct EC or PKCS#8 format.');
+    console.error('JWT generation failed with error:', error);
+    console.error('Error details:', error instanceof Error ? error.message : 'Unknown error');
+    throw new Error(`Failed to generate JWT token: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 };
 
