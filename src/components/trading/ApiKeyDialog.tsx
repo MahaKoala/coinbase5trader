@@ -11,11 +11,12 @@ import { testApiConnection } from "@/lib/coinbase-api";
 interface ApiKeyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onApiKeySet: (keyName: string, privateKey: string) => void;
+  onApiKeySet: (keyName: string, privateKey: string, keyId?: string) => void;
 }
 
 export const ApiKeyDialog = ({ open, onOpenChange, onApiKeySet }: ApiKeyDialogProps) => {
   const [keyName, setKeyName] = useState("");
+  const [keyId, setKeyId] = useState("");
   const [privateKey, setPrivateKey] = useState("");
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const { toast } = useToast();
@@ -30,7 +31,7 @@ export const ApiKeyDialog = ({ open, onOpenChange, onApiKeySet }: ApiKeyDialogPr
       return;
     }
 
-    onApiKeySet(keyName, privateKey);
+    onApiKeySet(keyName, privateKey, keyId || undefined);
     onOpenChange(false);
     toast({
       title: "API Keys Configured",
@@ -47,6 +48,8 @@ export const ApiKeyDialog = ({ open, onOpenChange, onApiKeySet }: ApiKeyDialogPr
       });
       return;
     }
+
+    // We now support both EC (SEC1) and PKCS#8 formats.
 
     setIsTestingConnection(true);
     try {
@@ -103,18 +106,32 @@ export const ApiKeyDialog = ({ open, onOpenChange, onApiKeySet }: ApiKeyDialogPr
               onChange={(e) => setKeyName(e.target.value)}
             />
           </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="key-id">Key ID (kid, optional)</Label>
+            <Input
+              id="key-id"
+              type="text"
+              placeholder="key-id"
+              value={keyId}
+              onChange={(e) => setKeyId(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              If provided, used as JWT header <code>kid</code>. Otherwise, the Key Name is used.
+            </p>
+          </div>
           
           <div className="space-y-2">
-            <Label htmlFor="private-key">Private Key (EC or PKCS#8 format)</Label>
+            <Label htmlFor="private-key">Private Key (EC or PKCS#8)</Label>
             <Textarea
               id="private-key"
-              placeholder="-----BEGIN EC PRIVATE KEY-----&#10;MHcCAQEEIE...&#10;-----END EC PRIVATE KEY-----&#10;&#10;or&#10;&#10;-----BEGIN PRIVATE KEY-----&#10;MIGHAgEAMBM...&#10;-----END PRIVATE KEY-----"
+              placeholder={"-----BEGIN EC PRIVATE KEY-----\nMHcCAQEE...\n-----END EC PRIVATE KEY-----\n\nOr\n\n-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBM...\n-----END PRIVATE KEY-----"}
               value={privateKey}
               onChange={(e) => setPrivateKey(e.target.value)}
               className="min-h-[120px] font-mono text-xs"
             />
             <p className="text-xs text-muted-foreground">
-              Copy and paste your private key including the BEGIN/END lines (supports both EC and PKCS#8 formats)
+              Paste your EC (SEC1) or PKCS#8 private key including the BEGIN/END lines. Both formats are supported.
             </p>
           </div>
           

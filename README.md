@@ -64,6 +64,69 @@ This project is built with:
 
 Simply open [Lovable](https://lovable.dev/projects/eea62d46-d140-481b-8027-f438532f20bc) and click on Share -> Publish.
 
+## Coinbase API local proxy (recommended)
+
+For secure, reliable JWT signing and to avoid browser WebCrypto/CORS limitations, run the local proxy:
+
+```sh
+npm run proxy  # starts http://localhost:8787
+```
+
+The frontend now routes Coinbase requests through this proxy by default for correct JWT handling and to keep your private key off the browser. To specify a custom URL, set `VITE_PROXY_URL`.
+
+Environment configuration (proxy and MCP read .env.local automatically):
+
+Create `.env.local` in project root (already added in this repo):
+
+```
+COINBASE_KEY_NAME="organizations/.../apiKeys/<KEY_ID>"
+COINBASE_KEY_ID="<KEY_ID>"
+COINBASE_PRIVATE_KEY="-----BEGIN EC PRIVATE KEY-----\n...\n-----END EC PRIVATE KEY-----"
+DEBUG_COINBASE="1"
+```
+
+The proxy will use these when the client does not send credentials in the request body.
+
+JWT structure (per Coinbase docs):
+- Header: `alg` ES256, `kid` Key ID (or Key Name), `typ` JWT
+- Payload: `iss` cdp, `sub` Key Name, `nbf` now, `exp` now+120s, `aud` api.coinbase.com, `uri` "<METHOD> <PATH>"
+
+Settings expects:
+- API Key Name: `organizations/.../apiKeys/<KEY_ID>`
+- Key ID (optional but preferred): `<KEY_ID>` (used for JWT `kid`)
+- Private Key: paste EC (SEC1) or PKCS#8 PEM
+
+## Coinbase MCP Server (optional)
+
+Run a local MCP server providing Coinbase tools for agents.
+
+Install dependencies (see docs):
+
+```sh
+npm i -D @modelcontextprotocol/sdk jsonwebtoken
+```
+
+Set env vars:
+
+```sh
+export COINBASE_KEY_NAME="organizations/.../apiKeys/<KEY_ID>"
+export COINBASE_KEY_ID="<KEY_ID>"   # optional
+export COINBASE_PRIVATE_KEY="$(cat /path/to/your/private_key.pem)"
+```
+
+Start the server (stdio transport):
+
+```sh
+npm run mcp
+```
+
+Tools exposed:
+- `coinbase_get_accounts`
+- `coinbase_get_product_ticker` (input: `{ "product_id": "BTC-USD" }`)
+- `coinbase_place_order` (inputs: `product_id`, `side`, `type`, `amount`, optional `price`)
+
+See https://docs.cdp.coinbase.com/mcp for integrating this MCP server with your agent runtime.
+
 ## Can I connect a custom domain to my Lovable project?
 
 Yes, you can!

@@ -34,8 +34,8 @@ const Index = () => {
   const [realTimePrices, setRealTimePrices] = useState<Record<string, number>>({});
   const { toast } = useToast();
 
-  const handleApiKeySet = (keyName: string, privateKey: string) => {
-    setApiCredentials({ keyName, privateKey });
+  const handleApiKeySet = (keyName: string, privateKey: string, keyId?: string) => {
+    setApiCredentials({ keyName, privateKey, keyId });
     setIsApiConnected(true);
   };
 

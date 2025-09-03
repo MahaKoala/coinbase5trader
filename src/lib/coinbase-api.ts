@@ -2,8 +2,131 @@
 // Uses ES256 (ECDSA with P-256 curve) as required by Coinbase
 import { SignJWT, importPKCS8 } from 'jose';
 
+// Minimal ASN.1 DER utilities to wrap an EC (SEC1) key into PKCS#8
+const derEncodeLength = (len: number): Uint8Array => {
+  if (len < 128) return new Uint8Array([len]);
+  const bytes = [] as number[];
+  let tmp = len;
+  while (tmp > 0) {
+    bytes.unshift(tmp & 0xff);
+    tmp >>= 8;
+  }
+  return new Uint8Array([0x80 | bytes.length, ...bytes]);
+};
+
+const concatUint8 = (...parts: Uint8Array[]): Uint8Array => {
+  const total = parts.reduce((acc, p) => acc + p.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const p of parts) {
+    out.set(p, offset);
+    offset += p.length;
+  }
+  return out;
+};
+
+const base64ToBytes = (b64: string): Uint8Array => {
+  // Normalize common Unicode variants to ASCII first
+  let clean = b64
+    .replace(/[\u00A0\u2000-\u200B\u202F\u205F\u3000]/g, ' ') // spaces
+    .replace(/[\uFF0B]/g, '+') // fullwidth plus
+    .replace(/[\uFF0F]/g, '/') // fullwidth slash
+    .replace(/[\uFF1D]/g, '='); // fullwidth equals
+
+  // Keep only valid base64 characters
+  clean = clean.replace(/[^A-Za-z0-9+/=]/g, '');
+  // Pad to multiple of 4 if needed (except impossible remainder 1)
+  const rem = clean.length % 4;
+  if (rem === 1) {
+    throw new Error('Invalid base64 string in PEM (incorrect length)');
+  } else if (rem > 0) {
+    clean = clean.padEnd(clean.length + (4 - rem), '=');
+  }
+
+  // Manual base64 decode (tolerant of extraneous chars removed above)
+  const table = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) table[i] = 255;
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  for (let i = 0; i < alphabet.length; i++) table[alphabet.charCodeAt(i)] = i;
+
+  const out: number[] = [];
+  let q: number[] = [];
+  for (let i = 0; i < clean.length; i++) {
+    const c = clean.charCodeAt(i);
+    if (c === 61) { // '=' padding
+      // Emit remaining bytes based on current quartet length
+      if (q.length === 2) {
+        out.push(((q[0] << 2) | (q[1] >> 4)) & 0xff);
+      } else if (q.length === 3) {
+        out.push(((q[0] << 2) | (q[1] >> 4)) & 0xff);
+        out.push(((q[1] << 4) | (q[2] >> 2)) & 0xff);
+      }
+      break;
+    }
+    const v = table[c];
+    if (v === 255) continue; // skip any stray
+    q.push(v);
+    if (q.length === 4) {
+      out.push(((q[0] << 2) | (q[1] >> 4)) & 0xff);
+      out.push(((q[1] << 4) | (q[2] >> 2)) & 0xff);
+      out.push(((q[2] << 6) | q[3]) & 0xff);
+      q = [];
+    }
+  }
+  if (q.length === 1) {
+    // Tolerate a stray trailing 6-bit quantum; ignore it.
+  } else if (q.length === 2) {
+    out.push(((q[0] << 2) | (q[1] >> 4)) & 0xff);
+  } else if (q.length === 3) {
+    out.push(((q[0] << 2) | (q[1] >> 4)) & 0xff);
+    out.push(((q[1] << 4) | (q[2] >> 2)) & 0xff);
+  }
+  const bytes = new Uint8Array(out.length);
+  for (let i = 0; i < out.length; i++) bytes[i] = out[i];
+  return bytes;
+};
+
+const bytesToBase64 = (bytes: Uint8Array): string => {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+};
+
+const pemToDer = (pem: string): Uint8Array => {
+  const match = pem.match(/-----BEGIN [^-]+-----([\s\S]*?)-----END [^-]+-----/);
+  if (!match) {
+    throw new Error('Invalid PEM format: missing BEGIN/END markers');
+  }
+  const base64 = match[1];
+  return base64ToBytes(base64);
+};
+
+const derToPem = (der: Uint8Array, label: string): string => {
+  const b64 = bytesToBase64(der).replace(/(.{64})/g, '$1\n');
+  return `-----BEGIN ${label}-----\n${b64}\n-----END ${label}-----`;
+};
+
+// Wraps an ECPrivateKey (SEC1, RFC5915) DER into a PKCS#8 PrivateKeyInfo
+// Assumes P-256 (prime256v1) if curve parameters are not inspected.
+const sec1ToPkcs8 = (sec1Pem: string): string => {
+  const ecPrivateKey = pemToDer(sec1Pem);
+  // AlgorithmIdentifier for id-ecPublicKey with prime256v1 parameters
+  const oidEcPublicKey = new Uint8Array([0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01]); // 1.2.840.10045.2.1
+  const oidPrime256v1 = new Uint8Array([0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07]); // 1.2.840.10045.3.1.7
+  const algIdSeqContent = concatUint8(oidEcPublicKey, oidPrime256v1);
+  const algIdSeq = concatUint8(new Uint8Array([0x30]), derEncodeLength(algIdSeqContent.length), algIdSeqContent);
+
+  const privateKeyOctet = concatUint8(new Uint8Array([0x04]), derEncodeLength(ecPrivateKey.length), ecPrivateKey);
+
+  const version = new Uint8Array([0x02, 0x01, 0x00]); // INTEGER 0
+  const pkcs8SeqContent = concatUint8(version, algIdSeq, privateKeyOctet);
+  const pkcs8Seq = concatUint8(new Uint8Array([0x30]), derEncodeLength(pkcs8SeqContent.length), pkcs8SeqContent);
+  return derToPem(pkcs8Seq, 'PRIVATE KEY');
+};
+
 export interface CoinbaseCredentials {
-  keyName: string;
+  keyName: string; // API key name (organizations/.../apiKeys/...) per Coinbase
+  keyId?: string;  // API key ID (kid) if provided separately
   privateKey: string;
 }
 
@@ -19,62 +142,37 @@ export const generateJWT = async (
   const now = Math.floor(Date.now() / 1000);
   
   try {
-    console.log('Attempting JWT generation with key:', keyName);
-    console.log('Private key format check:', privateKey.substring(0, 50) + '...');
-    
-    // Handle different private key formats
-    let cryptoKey: CryptoKey;
-    
-    if (privateKey.includes('BEGIN EC PRIVATE KEY')) {
-      console.log('Detected EC PRIVATE KEY format, converting...');
-      
-      // For EC private keys, we need to convert to PKCS#8 format
-      // This is a more robust conversion
-      const cleanKey = privateKey
-        .replace(/-----BEGIN EC PRIVATE KEY-----/g, '')
-        .replace(/-----END EC PRIVATE KEY-----/g, '')
-        .replace(/\s/g, '');
-      
-      console.log('Cleaned key length:', cleanKey.length);
-      
-      // Create PKCS#8 wrapper for EC P-256 private key
-      const pkcs8Header = 'MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg';
-      const pkcs8Key = `-----BEGIN PRIVATE KEY-----
-${pkcs8Header}${cleanKey.substring(14)}
------END PRIVATE KEY-----`;
-      
-      console.log('Converted PKCS#8 key preview:', pkcs8Key.substring(0, 100) + '...');
-      cryptoKey = await importPKCS8(pkcs8Key, 'ES256');
-      
-    } else if (privateKey.includes('BEGIN PRIVATE KEY')) {
-      console.log('Detected PKCS#8 format');
-      cryptoKey = await importPKCS8(privateKey, 'ES256');
-    } else {
-      throw new Error('Unsupported private key format. Expected EC PRIVATE KEY or PRIVATE KEY format.');
+    // Accept both SEC1 (EC PRIVATE KEY) and PKCS#8 (PRIVATE KEY)
+    const pkcs8Pem = privateKey.includes('BEGIN EC PRIVATE KEY')
+      ? sec1ToPkcs8(privateKey)
+      : privateKey;
+
+    if (!pkcs8Pem.includes('BEGIN PRIVATE KEY')) {
+      throw new Error('Unsupported private key format. Provide EC PRIVATE KEY or PRIVATE KEY PEM.');
     }
-    
-    console.log('Successfully imported private key');
+
+    const cryptoKey: CryptoKey = await importPKCS8(pkcs8Pem, 'ES256');
     
     // Create and sign the JWT
+    const method = requestMethod.toUpperCase();
     const jwt = await new SignJWT({
       iss: 'cdp',
+      sub: keyName,
       nbf: now,
       exp: now + 120, // Expires in 2 minutes as required by Coinbase
-      sub: keyName,
-      uri: `${requestMethod} api.coinbase.com${requestPath}`
+      // Per Coinbase docs, "uri" should be "<METHOD> <PATH>" (no scheme/host)
+      uri: `${method} ${requestPath}`,
+      // Some integrations also include aud, which is safe to add
+      aud: 'api.coinbase.com',
     })
       .setProtectedHeader({
         alg: 'ES256',
-        kid: keyName,
+        kid: credentials.keyId || keyName,
         typ: 'JWT'
       })
       .sign(cryptoKey);
-
-    console.log('JWT generated successfully');
     return jwt;
   } catch (error) {
-    console.error('JWT generation failed with error:', error);
-    console.error('Error details:', error instanceof Error ? error.message : 'Unknown error');
     throw new Error(`Failed to generate JWT token: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 };
@@ -86,9 +184,34 @@ export const makeCoinbaseRequest = async (
   path: string,
   body?: any
 ): Promise<any> => {
+  // Prefer proxy for compliance, security, and to avoid WebCrypto/CORS issues
+  const useProxy = true;
+
   try {
+    if (useProxy) {
+      const envUrl = (import.meta as any).env?.VITE_PROXY_URL as string | undefined;
+      const sameOrigin = typeof window !== 'undefined' ? `${window.location.origin}/proxy` : undefined;
+      const proxyUrl = envUrl || sameOrigin || 'http://localhost:8787/proxy';
+      const response = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          keyName: credentials.keyName,
+          keyId: credentials.keyId,
+          privateKey: credentials.privateKey,
+          method,
+          path,
+          payload: body ?? null,
+        }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`Proxy error: ${response.status} - ${errorData.error || response.statusText}`);
+      }
+      return await response.json();
+    }
+
     const jwt = await generateJWT(credentials, method, path);
-    
     const response = await fetch(`https://api.coinbase.com${path}`, {
       method,
       headers: {
