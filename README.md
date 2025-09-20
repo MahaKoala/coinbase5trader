@@ -64,17 +64,25 @@ This project is built with:
 
 Simply open [Lovable](https://lovable.dev/projects/eea62d46-d140-481b-8027-f438532f20bc) and click on Share -> Publish.
 
-## Coinbase API local proxy (recommended)
+## Coinbase API Python Backend (recommended)
 
-For secure, reliable JWT signing and to avoid browser WebCrypto/CORS limitations, run the local proxy:
+For secure, reliable JWT signing and to avoid browser WebCrypto/CORS limitations, run the Python backend:
 
 ```sh
-npm run proxy  # starts http://localhost:8787
+cd server-python
+python3 main.py  # starts http://localhost:8787
 ```
 
-The frontend now routes Coinbase requests through this proxy by default for correct JWT handling and to keep your private key off the browser. To specify a custom URL, set `VITE_PROXY_URL`.
+Or use the startup script:
 
-Environment configuration (proxy and MCP read .env.local automatically):
+```sh
+cd server-python
+python3 start_server.py  # starts with auto-reload
+```
+
+The frontend now routes Coinbase requests through this Python backend by default for correct JWT handling and to keep your private key off the browser. To specify a custom URL, set `VITE_PROXY_URL`.
+
+Environment configuration (Python backend reads .env.local automatically):
 
 Create `.env.local` in project root (already added in this repo):
 
@@ -85,26 +93,32 @@ COINBASE_PRIVATE_KEY="-----BEGIN EC PRIVATE KEY-----\n...\n-----END EC PRIVATE K
 DEBUG_COINBASE="1"
 ```
 
-The proxy will use these when the client does not send credentials in the request body.
+The Python backend will use these when the client does not send credentials in the request body.
 
-JWT structure (per Coinbase docs):
-- Header: `alg` ES256, `kid` Key ID (or Key Name), `typ` JWT
-- Payload: `iss` cdp, `sub` Key Name, `nbf` now, `exp` now+120s, `aud` api.coinbase.com, `uri` "<METHOD> <PATH>"
+### Backend Features:
+- **FastAPI** framework with automatic API documentation
+- **Official Coinbase SDK** (coinbase-advanced-py) for reliable API communication
+- **JWT authentication** handled server-side using Coinbase credentials
+- **CORS support** for frontend integration
+- **Health check endpoint** at `/health`
+- **Proxy endpoint** at `/proxy` for all Coinbase API requests
 
-Settings expects:
-- API Key Name: `organizations/.../apiKeys/<KEY_ID>`
-- Key ID (optional but preferred): `<KEY_ID>` (used for JWT `kid`)
-- Private Key: paste EC (SEC1) or PKCS#8 PEM
+### Python Dependencies:
+- `fastapi` - Web framework
+- `uvicorn` - ASGI server
+- `coinbase-advanced-py` - Official Coinbase SDK
+- `python-dotenv` - Environment variable management
+
+Install dependencies:
+
+```sh
+cd server-python
+pip install -r requirements.txt
+```
 
 ## Coinbase MCP Server (optional)
 
 Run a local MCP server providing Coinbase tools for agents.
-
-Install dependencies (see docs):
-
-```sh
-npm i -D @modelcontextprotocol/sdk jsonwebtoken
-```
 
 Set env vars:
 
@@ -117,13 +131,21 @@ export COINBASE_PRIVATE_KEY="$(cat /path/to/your/private_key.pem)"
 Start the server (stdio transport):
 
 ```sh
-npm run mcp
+cd server-python
+python3 mcp_server.py
 ```
 
 Tools exposed:
 - `coinbase_get_accounts`
 - `coinbase_get_product_ticker` (input: `{ "product_id": "BTC-USD" }`)
 - `coinbase_place_order` (inputs: `product_id`, `side`, `type`, `amount`, optional `price`)
+
+### MCP Server Features:
+- **Python implementation** using official Coinbase SDK
+- **Async/await support** for non-blocking operations
+- **Error handling** with detailed error messages
+- **Environment variable configuration** for credentials
+- **JSON-RPC 2.0** compliant communication
 
 See https://docs.cdp.coinbase.com/mcp for integrating this MCP server with your agent runtime.
 

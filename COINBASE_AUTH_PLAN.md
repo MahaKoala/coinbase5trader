@@ -6,8 +6,8 @@ Source of truth:
 Goals
 - Implement JWT (ES256/ECDSA P-256) per Coinbase spec for API Key authentication.
 - Support both SEC1 (EC PRIVATE KEY) and PKCS#8 (PRIVATE KEY) PEM inputs from the UI.
-- Sign requests reliably via a small Node proxy (avoids browser WebCrypto/CORS issues) and keep claims/header exactly as documented.
- - In proxy, avoid OpenSSL PEM decoders by extracting EC private scalar (d) from PEM and importing as JWK into Node crypto.
+- **MIGRATED**: Sign requests reliably via Python backend using official Coinbase SDK (avoids browser WebCrypto/CORS issues) and keep claims/header exactly as documented.
+- **MIGRATED**: Use official Coinbase SDK for robust authentication and API communication.
 
 JWT Requirements (from docs)
 - Header:
@@ -23,38 +23,39 @@ JWT Requirements (from docs)
   - `aud`: `api.coinbase.com`
 
 Decisions
-- Always use the local proxy for signing in development and by default in production. This avoids WebCrypto availability issues and secures the private key off the browser.
-- Accept SEC1 in the UI but immediately convert to PKCS#8 in the signer to avoid OpenSSL 3 decoder issues.
-- Prefer `jsonwebtoken` for Node signing to match common JS samples; ensure header and payload are set exactly.
+- **MIGRATED**: Always use the Python backend for authentication in development and by default in production. This avoids WebCrypto availability issues, secures the private key off the browser, and leverages the official Coinbase SDK.
+- **MIGRATED**: Accept SEC1 in the UI but now handled by official Coinbase SDK which supports both formats natively.
+- **MIGRATED**: Use official `coinbase-advanced-py` SDK for reliable authentication and API communication.
 
-Implementation Plan
-1) Proxy signer
+Implementation Plan (COMPLETED)
+1) **COMPLETED** Python backend with official SDK
    - Input: `{ keyName, keyId?, privateKey, method, path, payload? }`
-   - Extract EC private scalar d from SEC1 or PKCS#8 using minimal ASN.1.
-   - Import as JWK into Node crypto (`createPrivateKey({ format: 'jwk' })`).
-   - Build claims and protected header per docs.
-   - Sign with ES256 via `jsonwebtoken` and forward to Coinbase.
-2) Client library
+   - Use official Coinbase SDK (`coinbase-advanced-py`) for authentication
+   - SDK handles JWT signing, PEM parsing, and API communication automatically
+   - FastAPI framework with CORS support and health checks
+2) **COMPLETED** Client library
    - Route requests to same-origin `/proxy` during dev (Vite proxy → localhost:8787).
    - Optional `VITE_PROXY_URL` to override proxy endpoint.
    - Provide UI for Key Name, Key ID (optional), and Private Key (EC or PKCS#8).
-3) Robust PEM handling
-   - Tolerant parsing for clipboard artifacts (NBSP, fullwidth chars, etc.).
-   - Convert SEC1 → PKCS#8 with ASN.1 wrapper for P-256.
-4) Docs & validation
-   - README: proxy usage, environment configuration, and verification steps.
+3) **COMPLETED** Robust PEM handling
+   - Official Coinbase SDK handles all PEM formats natively
+   - No need for custom ASN.1 parsing or format conversion
+4) **COMPLETED** Docs & validation
+   - README: Python backend usage, environment configuration, and verification steps.
    - Add concise diagnostics if auth fails (status code and Coinbase message).
-   - Add proxy DEBUG mode to log sanitized JWT header/payload and the exact signed `uri`.
+   - Python backend DEBUG mode to log API requests and responses (no secrets).
 
-Verification Steps
+Verification Steps (UPDATED)
 - Start dev: `npm run dev` and `npm run proxy`.
 - Settings → paste API Key Name, Key ID (optional), Private Key (EC or PKCS#8).
-- Test Connection → expect success; if failure, capture proxy 4xx/5xx body.
+- **MIGRATION COMPLETED**: All Node.js server files removed, Python backend is now the default.
+- Test Connection → expect success; if failure, capture Python backend 4xx/5xx body.
 - Place a small test call: `GET /api/v3/brokerage/accounts`.
- - Enable debug if needed: `DEBUG_COINBASE=1 npm run proxy` to log header/payload and upstream responses (no secrets).
+ - Enable debug if needed: `DEBUG_COINBASE=1 npm run proxy-python` to log API requests and responses (no secrets).
 
 Open Questions
-- Some tenants may require a different `aud`. Defaulting to `api.coinbase.com` per docs; make configurable if needed.
+- Some tenants may require a different `aud`. Defaulting to `api.coinbase.com` per docs; handled automatically by official SDK.
 
 Changelog (keep this updated)
 - [v1] Initial plan, proxy-first signing, SEC1 support, client wiring.
+- [v2] **MIGRATION COMPLETED**: Migrated from Node.js proxy to Python backend with official Coinbase SDK for improved reliability and maintainability.

@@ -9,8 +9,8 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "proxy": "node server/proxy.js",
-    "mcp": "node server/mcp/coinbase-mcp-server.js"
+    "proxy": "cd server-python && python3 start_server.py",
+    "mcp": "cd server-python && python3 mcp_server.py"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
