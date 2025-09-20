@@ -5,6 +5,7 @@ import { TradeConfigCard } from "@/components/trading/TradeConfigCard";
 import { ActiveTradesCard } from "@/components/trading/ActiveTradesCard";
 import { useToast } from "@/hooks/use-toast";
 import { CoinbaseCredentials, getCryptoPrice, placeOrder } from "@/lib/coinbase-api";
+import { SecureKeyManager } from "@/lib/secure-key-manager";
 
 interface Trade {
   id: string;
@@ -34,8 +35,24 @@ const Index = () => {
   const [realTimePrices, setRealTimePrices] = useState<Record<string, number>>({});
   const { toast } = useToast();
 
+  // Load credentials from secure storage on component mount
+  useEffect(() => {
+    const credentials = SecureKeyManager.getCredentials();
+    if (credentials && SecureKeyManager.isSessionActive()) {
+      setApiCredentials(credentials);
+      setIsApiConnected(true);
+    }
+  }, []);
+
+  // Set up auto-clear for security (30 minutes of inactivity)
+  useEffect(() => {
+    const cleanup = SecureKeyManager.setupAutoClear(30);
+    return cleanup;
+  }, []);
+
   const handleApiKeySet = (keyName: string, privateKey: string, keyId?: string) => {
-    setApiCredentials({ keyName, privateKey, keyId });
+    const credentials = { keyName, privateKey, keyId };
+    setApiCredentials(credentials);
     setIsApiConnected(true);
   };
 

@@ -16,16 +16,32 @@ pip install -r requirements.txt
 cd ..
 ```
 
-## Step 2: Set Environment Variables
-Create `.env.local` in the project root:
-```bash
-# Coinbase API Credentials
-COINBASE_KEY_NAME=organizations/YOUR_ORG_ID/apiKeys/YOUR_KEY_NAME
-COINBASE_KEY_ID=YOUR_KEY_ID  # Optional but recommended
-COINBASE_PRIVATE_KEY="-----BEGIN EC PRIVATE KEY-----\nYOUR_PRIVATE_KEY\n-----END EC PRIVATE KEY-----"
+## Step 2: API Key Management (No File Storage Required!)
 
-# Optional: Debug mode
+**NEW: Secure Session-Based Key Management**
+- API keys are now stored in browser session memory only
+- No `.env.local` file needed for API credentials
+- Keys are automatically cleared when browser closes
+- Optional auto-clear after 30 minutes of inactivity
+- Encrypted storage for additional security
+
+**To configure API keys:**
+1. Start the application
+2. Click "Settings" in the header
+3. Enter your Coinbase credentials in the dialog:
+   - **API Key Name**: `organizations/YOUR_ORG_ID/apiKeys/YOUR_KEY_NAME`
+   - **Key ID** (optional): Your key ID
+   - **Private Key**: Your EC or PKCS#8 private key with BEGIN/END markers
+4. Click "Test Connection" to verify credentials
+5. Click "Save Keys" to store securely in session
+
+**Optional Environment Variables** (create `.env.local` if needed):
+```bash
+# Optional: Debug mode for backend
 DEBUG_COINBASE=true
+
+# Optional: Custom backend port (default: 8787)
+PORT=8787
 ```
 
 ## Step 3: Start the Servers
@@ -53,9 +69,11 @@ npm run preview
 
 ## Step 4: Verify Setup
 1. Open http://localhost:5173 (dev) or http://localhost:4173 (preview)
-2. Go to Settings → API Configuration
-3. Enter your Coinbase credentials
-4. Test connection with "Test API Connection" button
+2. Click "Settings" in the header
+3. Enter your Coinbase credentials in the API dialog
+4. Click "Test Connection" to verify credentials work
+5. Click "Save Keys" to store securely in session memory
+6. Check header shows "API Connected" with masked key name
 
 ## Available Commands
 ```bash
@@ -76,4 +94,7 @@ npm run lint           # Run ESLint
 ## Troubleshooting
 - **Port 8787 in use**: Kill existing process or change `PORT` in `.env.local`
 - **CORS issues**: Ensure backend is running before accessing frontend
-- **API errors**: Check credentials in `.env.local` and enable `DEBUG_COINBASE=true`
+- **API errors**: Verify credentials format and enable `DEBUG_COINBASE=true`
+- **Keys not persisting**: This is normal! Keys are session-only for security
+- **Connection issues**: Check that backend is running with `npm run proxy`
+- **Invalid credentials**: Ensure key name format is correct and private key includes BEGIN/END markers

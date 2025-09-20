@@ -1,5 +1,6 @@
 import { Key, Settings, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SecureKeyManager } from "@/lib/secure-key-manager";
 
 interface HeaderProps {
   onSettingsClick: () => void;
@@ -7,6 +8,10 @@ interface HeaderProps {
 }
 
 export const Header = ({ onSettingsClick, isApiConnected }: HeaderProps) => {
+  // Get masked key name for display
+  const credentials = SecureKeyManager.getCredentials();
+  const maskedKeyName = SecureKeyManager.getMaskedKeyName(credentials);
+
   return (
     <header className="border-b border-border bg-card">
       <div className="flex items-center justify-between px-6 py-4">
@@ -20,9 +25,16 @@ export const Header = ({ onSettingsClick, isApiConnected }: HeaderProps) => {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <Key className={`h-4 w-4 ${isApiConnected ? 'text-success' : 'text-muted-foreground'}`} />
-            <span className={`text-sm ${isApiConnected ? 'text-success' : 'text-muted-foreground'}`}>
-              API {isApiConnected ? 'Connected' : 'Not Connected'}
-            </span>
+            <div className="flex flex-col">
+              <span className={`text-sm ${isApiConnected ? 'text-success' : 'text-muted-foreground'}`}>
+                API {isApiConnected ? 'Connected' : 'Not Connected'}
+              </span>
+              {isApiConnected && (
+                <span className="text-xs text-muted-foreground font-mono">
+                  {maskedKeyName}
+                </span>
+              )}
+            </div>
           </div>
           
           <Button variant="outline" size="sm" onClick={onSettingsClick}>

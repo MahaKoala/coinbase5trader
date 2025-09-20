@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Key, Shield } from "lucide-react";
+import { Key, Shield, Eye, EyeOff, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { testApiConnection } from "@/lib/coinbase-api";
+import { SecureKeyManager } from "@/lib/secure-key-manager";
 
 interface ApiKeyDialogProps {
   open: boolean;
@@ -19,7 +20,27 @@ export const ApiKeyDialog = ({ open, onOpenChange, onApiKeySet }: ApiKeyDialogPr
   const [keyId, setKeyId] = useState("");
   const [privateKey, setPrivateKey] = useState("");
   const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [showPrivateKey, setShowPrivateKey] = useState(false);
+  const [hasStoredCredentials, setHasStoredCredentials] = useState(false);
   const { toast } = useToast();
+
+  // Load existing credentials when dialog opens
+  useEffect(() => {
+    if (open) {
+      const credentials = SecureKeyManager.getCredentials();
+      if (credentials) {
+        setKeyName(credentials.keyName);
+        setKeyId(credentials.keyId || "");
+        setPrivateKey(credentials.privateKey);
+        setHasStoredCredentials(true);
+      } else {
+        setKeyName("");
+        setKeyId("");
+        setPrivateKey("");
+        setHasStoredCredentials(false);
+      }
+    }
+  }, [open]);
 
   const handleSave = () => {
     if (!keyName || !privateKey) {
@@ -31,12 +52,34 @@ export const ApiKeyDialog = ({ open, onOpenChange, onApiKeySet }: ApiKeyDialogPr
       return;
     }
 
-    onApiKeySet(keyName, privateKey, keyId || undefined);
-    onOpenChange(false);
-    toast({
-      title: "API Keys Configured",
-      description: "Your Coinbase API keys have been securely stored.",
-    });
+    // Validate credentials format
+    const validation = SecureKeyManager.validateCredentials({ keyName, privateKey, keyId });
+    if (!validation.isValid) {
+      toast({
+        title: "Invalid Credentials",
+        description: validation.errors.join(". "),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Store credentials securely
+      SecureKeyManager.storeCredentials({ keyName, privateKey, keyId: keyId || undefined });
+      
+      onApiKeySet(keyName, privateKey, keyId || undefined);
+      onOpenChange(false);
+      toast({
+        title: "API Keys Secured",
+        description: "Your Coinbase API keys are stored in session memory only.",
+      });
+    } catch (error) {
+      toast({
+        title: "Storage Failed",
+        description: "Unable to securely store API credentials.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleTestConnection = async () => {
@@ -49,11 +92,20 @@ export const ApiKeyDialog = ({ open, onOpenChange, onApiKeySet }: ApiKeyDialogPr
       return;
     }
 
-    // We now support both EC (SEC1) and PKCS#8 formats.
+    // Validate credentials format first
+    const validation = SecureKeyManager.validateCredentials({ keyName, privateKey, keyId });
+    if (!validation.isValid) {
+      toast({
+        title: "Invalid Credentials",
+        description: validation.errors.join(". "),
+        variant: "destructive",
+      });
+      return;
+    }
 
     setIsTestingConnection(true);
     try {
-      const result = await testApiConnection({ keyName, privateKey });
+      const result = await testApiConnection({ keyName, privateKey, keyId: keyId || undefined });
       
       if (result.success) {
         toast({
@@ -76,6 +128,18 @@ export const ApiKeyDialog = ({ open, onOpenChange, onApiKeySet }: ApiKeyDialogPr
     } finally {
       setIsTestingConnection(false);
     }
+  };
+
+  const handleClearCredentials = () => {
+    SecureKeyManager.clearCredentials();
+    setKeyName("");
+    setKeyId("");
+    setPrivateKey("");
+    setHasStoredCredentials(false);
+    toast({
+      title: "Credentials Cleared",
+      description: "API credentials have been removed from session.",
+    });
   };
 
   return (
@@ -123,32 +187,63 @@ export const ApiKeyDialog = ({ open, onOpenChange, onApiKeySet }: ApiKeyDialogPr
           
           <div className="space-y-2">
             <Label htmlFor="private-key">Private Key (EC or PKCS#8)</Label>
-            <Textarea
-              id="private-key"
-              placeholder={"-----BEGIN EC PRIVATE KEY-----\nMHcCAQEE...\n-----END EC PRIVATE KEY-----\n\nOr\n\n-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBM...\n-----END PRIVATE KEY-----"}
-              value={privateKey}
-              onChange={(e) => setPrivateKey(e.target.value)}
-              className="min-h-[120px] font-mono text-xs"
-            />
+            <div className="relative">
+              <Textarea
+                id="private-key"
+                placeholder={"-----BEGIN EC PRIVATE KEY-----\nMHcCAQEE...\n-----END EC PRIVATE KEY-----\n\nOr\n\n-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBM...\n-----END PRIVATE KEY-----"}
+                value={privateKey}
+                onChange={(e) => setPrivateKey(e.target.value)}
+                className="min-h-[120px] font-mono text-xs pr-10"
+                type={showPrivateKey ? "text" : "password"}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="absolute top-2 right-2 h-6 w-6 p-0"
+                onClick={() => setShowPrivateKey(!showPrivateKey)}
+              >
+                {showPrivateKey ? (
+                  <EyeOff className="h-3 w-3" />
+                ) : (
+                  <Eye className="h-3 w-3" />
+                )}
+              </Button>
+            </div>
             <p className="text-xs text-muted-foreground">
               Paste your EC (SEC1) or PKCS#8 private key including the BEGIN/END lines. Both formats are supported.
             </p>
           </div>
           
-          <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button 
-              variant="secondary" 
-              onClick={handleTestConnection}
-              disabled={isTestingConnection || !keyName || !privateKey}
-            >
-              {isTestingConnection ? "Testing..." : "Test Connection"}
-            </Button>
-            <Button onClick={handleSave} className="bg-gradient-primary">
-              Save API Keys
-            </Button>
+          <div className="flex justify-between items-center pt-4">
+            <div className="flex gap-2">
+              {hasStoredCredentials && (
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={handleClearCredentials}
+                  className="text-destructive hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Clear
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button 
+                variant="secondary" 
+                onClick={handleTestConnection}
+                disabled={isTestingConnection || !keyName || !privateKey}
+              >
+                {isTestingConnection ? "Testing..." : "Test Connection"}
+              </Button>
+              <Button onClick={handleSave} className="bg-gradient-primary">
+                {hasStoredCredentials ? "Update Keys" : "Save Keys"}
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>
